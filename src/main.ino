@@ -264,9 +264,36 @@ void handleFileList() {
 	server.send(200, "text/json", output);
 }
 
+void handleFileInfo() {
+	if (!server.hasArg("dir")) { server.send(500, "text/plain", "BAD ARGS"); return; }
+
+	String path = server.arg("dir");
+	File dir = SPIFFS.open(path);
+    if(!dir.isDirectory()) { server.send(500, "text/plain", "NOT A DIRECTORY"); return; }
+	path = String();
+
+	String output = "{ \"files\" : [";
+	while (File entry = dir.openNextFile()) {
+		if (output != "{ \"files\" : [") output += ',';
+		output += "{\"type\":\"";
+		output += entry.isDirectory() ? "dir" : "file";
+		output += "\",\"name\":\"";
+		output += String(entry.name());
+		output += "\"}";
+		entry.close();
+	}
+	output += "], \"total\": ";
+    output += String(SPIFFS.totalBytes());
+    output += ", \"used\": " ;
+    output += String(SPIFFS.usedBytes());
+    output += "}";
+	server.send(200, "text/json", output);
+}
+
 
 void setupServer() {
 	server.on("/list", HTTP_GET, handleFileList);
+    server.on("/info", HTTP_GET, handleFileInfo);
 	//load editor
 	server.on("/edit", HTTP_GET, []() {
 		if (!handleFileRead("/edit.htm")) server.send(404, "text/plain", "FileNotFound");

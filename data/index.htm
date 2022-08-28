@@ -12,6 +12,8 @@
     <label for="filelist">Select file:</label>
     <select id="filelist"></select>
     <button id="show">Show on EPD</button>
+    <div><progress value="70" max="100" id="progress">-</progress></div>
+    <div id="usage">---</div>
     <hr />
     <input type="file" id="filechooser" /><br /><button id="upload">Upload as upload.bmp</button>
     <canvas width="600" height="448" id="canvas"></canvas>
@@ -34,10 +36,17 @@ const palette = [
 
 async function updateFileList() {
     let el = document.querySelector('#filelist');
-    list = await fetch('/list?dir=/');
+    list = await fetch('/info?dir=/');
     data = await list.json();
-    bitmaps = data.map( e => e.name ).filter(e => e.endsWith('.bmp')).sort();
+    bitmaps = data.files.map( e => e.name ).filter(e => e.endsWith('.bmp')).sort();
     el.innerHTML = bitmaps.map(e => `<option value="${e}">${e}</option>`).join();
+    el = document.querySelector('#progress');
+    el.max = data.total;
+    el.value = data.used;
+    el = document.querySelector('#usage');
+    let free = data.total - data.used;
+    let pics = Math.floor(free/134488);
+    el.innerHTML = `${data.used} of ${data.total} Bytes used. ${free} bytes Free. Space for <b>${pics}</b> Pictures left.`;
 }
 
 updateFileList();
