@@ -13,7 +13,7 @@
     <select id="filelist"></select>
     <button id="show">Show on EPD</button>
     <hr />
-    <input type="file" id="filechooser" /><br />
+    <input type="file" id="filechooser" /><br /><button id="upload">Upload as upload.bmp</button>
     <canvas width="600" height="448" id="canvas"></canvas>
 </body>
 </html>
@@ -21,6 +21,16 @@
 
 var canvas = document.querySelector('#canvas');
 var ctx = canvas.getContext('2d');
+
+const palette = [
+    [12,27,48],
+    [226,219,217],
+    [33,108,55],
+    [40,65,114],
+    [174,53,46],
+    [227,189,65],
+    [214,105,53]
+];
 
 async function updateFileList() {
     let el = document.querySelector('#filelist');
@@ -48,6 +58,17 @@ document.querySelector('#filechooser').addEventListener('input', (e)=> {
     reader.readAsDataURL(file);
 });
 
+
+document.querySelector('#upload').addEventListener('click', (e)=> {
+    var data = create4BitBitmap(canvas,palette);
+    postdata = new FormData();
+    postdata.append('data', new Blob([data]), 'upload.bmp');
+    fetch('/edit',{
+        method: 'POST',
+        body: postdata
+    });
+})
+
 function fileOnload(e) {
     let img = new Image; // $('<img>', { src: e.target.result });
     img.src = e.target.result;
@@ -59,15 +80,6 @@ function fileOnload(e) {
         orig.getContext('2d').drawImage(e.target, 0, 0);
         //document.body.appendChild(orig);
         resizeToCanvas(orig,canvas,'cover');
-        var palette = [
-            [12,27,48],
-            [226,219,217],
-            [33,108,55],
-            [40,65,114],
-            [174,53,46],
-            [227,189,65],
-            [214,105,53]
-        ];
         dither(canvas,palette);
     };
 }
@@ -139,10 +151,12 @@ for each y
 */
 
 function findClosestColor(color, palette) {
+    var idx = 0;
     var tmp = palette.map( c => {
         c.err = Math.abs(c[0] - color[0])
             + Math.abs(c[1] - color[1])
             + Math.abs(c[2] - color[2]);
+        c.index = idx++;
         return c;
     });
     tmp.sort( (a,b) => a.err-b.err );
@@ -225,5 +239,60 @@ function dither(canvas, palette) {
     ctx.putImageData(newData, 0, 0);
 }
 
+
+
+function create4BitBitmap(canvas, palette = []) {
+    // https://www.pohlig.de/Unterricht/Inf2004/Kap27/27.3_Das_bmp_Format.htm
+    const colors = palette.length;
+    if(colors > 16) throw("Too many colors in palette!");
+    const paletteOffset = 54;
+    const dataOffset = paletteOffset + colors*4;
+    const dataLengt = (canvas.width*canvas.height)/2;
+    const srcData = canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+    var data = new Uint8ClampedArray(dataOffset + dataLengt);
+    data[0] = 0x42; // 'B'
+    data[1] = 0x4D; // 'M'
+    data[2] = data.length & 0xFF;
+    data[3] = data.length>>8 & 0xFF;
+    data[4] = data.length>>16 & 0xFF;
+    data[5] = data.length>>24 & 0xFF;
+    data[10] = dataOffset & 0xFF;
+    data[11] = dataOffset>>8 & 0xFF;
+    data[12] = dataOffset>>16 & 0xFF;
+    data[13] = dataOffset>>24 & 0xFF;
+    data[14] = 0x28; // Length of following header
+    data[18] = canvas.width & 0xFF;
+    data[19] = canvas.width>>8 & 0xFF;
+    data[20] = canvas.width>>16 & 0xFF;
+    data[21] = canvas.width>>24 & 0xFF;
+    data[22] = canvas.height & 0xFF;
+    data[23] = canvas.height>>8 & 0xFF;
+    data[24] = canvas.height>>16 & 0xFF;
+    data[25] = canvas.height>>24 & 0xFF;
+    data[26] = 0x01; // Layers
+    data[28] = 0x04; // bits per pixel
+    data[34] = dataLengt & 0xFF;
+    data[35] = dataLengt>>8 & 0xFF;
+    data[36] = dataLengt>>16 & 0xFF;
+    data[37] = dataLengt>>24 & 0xFF;
+    data[38] = 0xFF; // dpi - no idea
+    data[42] = 0xFF; // dpi - no idea
+    for(var i = 0; i < colors; i++) {
+        data[paletteOffset + i*4 + 0] = palette[i][0];
+        data[paletteOffset + i*4 + 1] = palette[i][1];
+        data[paletteOffset + i*4 + 2] = palette[i][2];
+    }
+    var pointer = dataOffset;
+    for(var y = canvas.height-1; y >= 0; y--) for(var x = 0; x < canvas.width; x+=2) {
+        let offs = getPixelDataOffset(x,y,canvas.width);
+        let pixel1 = [ srcData[offs], srcData[offs+1], srcData[offs+2] ];
+        pixel1 = findClosestColor(pixel1, palette);
+        offs = getPixelDataOffset(x+1,y,canvas.width);
+        pixel2 = [ srcData[offs], srcData[offs+1], srcData[offs+2] ];
+        pixel2 = findClosestColor(pixel2, palette);
+        data[pointer++] = (pixel1.index<<4 & 0xF0) | (pixel2.index & 0x0F);
+    }
+    return data;
+}
 
 </script>
