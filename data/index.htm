@@ -12,9 +12,15 @@
     <label for="filelist">Select file:</label>
     <select id="filelist"></select>
     <button id="show">Show on EPD</button>
+    <hr />
+    <input type="file" id="filechooser" /><br />
+    <canvas width="600" height="448" id="canvas"></canvas>
 </body>
 </html>
 <script>
+
+var canvas = document.querySelector('#canvas');
+var ctx = canvas.getContext('2d');
 
 async function updateFileList() {
     let el = document.querySelector('#filelist');
@@ -32,5 +38,192 @@ document.querySelector('#show').addEventListener('click', (e)=> {
         fetch('/show?file=/' + file);
     }
 })
+
+document.querySelector('#filechooser').addEventListener('input', (e)=> {
+    console.log(e);
+    let file = e.target.files[0];
+    if (!file.type.match(/image.*/)) return;
+    let reader = new FileReader();
+    reader.onload = fileOnload;
+    reader.readAsDataURL(file);
+});
+
+function fileOnload(e) {
+    let img = new Image; // $('<img>', { src: e.target.result });
+    img.src = e.target.result;
+    img.onload = (e) => {
+        //ctx.drawImage(e.target, 0, 0);
+        var orig = document.createElement('canvas');
+        orig.width = img.width;
+        orig.height = img.height;
+        orig.getContext('2d').drawImage(e.target, 0, 0);
+        //document.body.appendChild(orig);
+        resizeToCanvas(orig,canvas,'cover');
+        var palette = [
+            [12,27,48],
+            [226,219,217],
+            [33,108,55],
+            [40,65,114],
+            [174,53,46],
+            [227,189,65],
+            [214,105,53]
+        ];
+        dither(canvas,palette);
+    };
+}
+
+function resizeToCanvas(source, dest, mode = 'cover') {
+    var canvas = dest,
+        ctx = canvas.getContext("2d"),
+        oc = source,
+        octx = oc.getContext('2d');
+
+    var aspectDest = canvas.width/canvas.height;
+    var aspectSource = oc.width/oc.height;
+    var cur = { width: oc.width, height: oc.height };
+
+    while (cur.width * 0.5 > canvas.width && cur.height * 0.5 > canvas.height) {
+        octx.drawImage(oc, 0, 0, cur.width, cur.height, 0, 0, Math.floor(cur.width * 0.5), Math.floor(cur.height * 0.5));
+        cur.width = Math.floor(cur.width * 0.5);
+        cur.height = Math.floor(cur.height * 0.5);
+    }
+
+    if(mode == 'fill') {
+        ctx.drawImage(oc, 0, 0, cur.width, cur.height, 0, 0, canvas.width, canvas.height);
+        return;
+    }
+
+    var targetWidth = Math.round(canvas.height*aspectSource);
+    var targetHeight = canvas.height;
+    var offsetY = 0;
+    var offsetX = Math.round((canvas.width-(canvas.height*aspectSource))/2);
+
+    if(mode == 'contain') {
+        if(targetWidth > canvas.width) {
+            targetWidth = canvas.width;
+            targetHeight = Math.round(canvas.width/aspectSource);
+            offsetY = Math.round((canvas.height-targetHeight)/2);
+            offsetX = 0;
+        }
+        ctx.drawImage(oc, 0, 0, cur.width, cur.height, offsetX, offsetY, targetWidth, targetHeight);
+        return;
+    }
+
+    if(mode == 'cover') {
+        if(targetWidth < canvas.width) {
+            targetWidth = canvas.width;
+            targetHeight = Math.round(canvas.width/aspectSource);
+            offsetY = Math.round((canvas.height-targetHeight)/2);
+            offsetX = 0;
+        }
+        ctx.drawImage(oc, 0, 0, cur.width, cur.height, offsetX, offsetY, targetWidth, targetHeight);
+        return;
+    }
+
+}
+
+
+/*
+https://de.wikipedia.org/wiki/Floyd-Steinberg-Algorithmus
+
+for each y
+   for each x
+      oldpixel        := pixel[x][y]
+      newpixel        := find_closest_palette_color (oldpixel)
+      pixel[x][y]     := newpixel
+      quant_error     := oldpixel - newpixel
+      pixel[x+1][y  ] := pixel[x+1][y  ] + quant_error * 7 / 16
+      pixel[x-1][y+1] := pixel[x-1][y+1] + quant_error * 3 / 16
+      pixel[x  ][y+1] := pixel[x  ][y+1] + quant_error * 5 / 16
+      pixel[x+1][y+1] := pixel[x+1][y+1] + quant_error * 1 / 16
+*/
+
+function findClosestColor(color, palette) {
+    var tmp = palette.map( c => {
+        c.err = Math.abs(c[0] - color[0])
+            + Math.abs(c[1] - color[1])
+            + Math.abs(c[2] - color[2]);
+        return c;
+    });
+    tmp.sort( (a,b) => a.err-b.err );
+    return tmp[0];
+}
+
+function getPixelDataOffset(x,y,w) {
+    return x*4 + (y*w)*4;
+}
+
+function addPixels(a,b) {
+    return [
+        a[0]+b[0],
+        a[1]+b[1],
+        a[2]+b[2],
+    ]
+}
+
+function subtractPixels(a,b) {
+    return [
+        a[0]-b[0],
+        a[1]-b[1],
+        a[2]-b[2],
+    ]
+}
+
+function multiplyPixels(a,b) {
+    return [
+        a[0]*b,
+        a[1]*b,
+        a[2]*b,
+    ]
+}
+
+function dither(canvas, palette) {
+    var ctx = canvas.getContext('2d');
+    var data = ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    var pixels = canvas.width * canvas.height;
+    var ndata = new Uint8ClampedArray(pixels*4);
+    for(var i = 0; i < pixels*4; i++) ndata[i] = data[i];
+    var w = canvas.width;
+    for(var y = 0; y < canvas.height; y++) for(var x = 0; x < canvas.width; x++) {
+        var o = getPixelDataOffset(x,y,w);
+        var oldPixel = [ndata[o], ndata[o+1], ndata[o+2]];
+        var newPixel = findClosestColor(oldPixel, palette);
+        ndata[o+0] = newPixel[0];
+        ndata[o+1] = newPixel[1];
+        ndata[o+2] = newPixel[2];
+        var error = subtractPixels(oldPixel,newPixel);
+        // Dither-Step
+        o = getPixelDataOffset(x+1,y,w);
+        oldPixel = [ndata[o], ndata[o+1], ndata[o+2]];
+        newPixel = addPixels(oldPixel,multiplyPixels(error,7/16));
+        ndata[o+0] = newPixel[0];
+        ndata[o+1] = newPixel[1];
+        ndata[o+2] = newPixel[2];
+        // Dither-Step
+        o = getPixelDataOffset(x-1,y+1,w);
+        oldPixel = [ndata[o], ndata[o+1], ndata[o+2]];
+        newPixel = addPixels(oldPixel,multiplyPixels(error,3/16));
+        ndata[o+0] = newPixel[0];
+        ndata[o+1] = newPixel[1];
+        ndata[o+2] = newPixel[2];
+        // Dither-Step
+        o = getPixelDataOffset(x,y+1,w);
+        oldPixel = [ndata[o], ndata[o+1], ndata[o+2]];
+        newPixel = addPixels(oldPixel,multiplyPixels(error,5/16));
+        ndata[o+0] = newPixel[0];
+        ndata[o+1] = newPixel[1];
+        ndata[o+2] = newPixel[2];
+        // Dither-Step
+        o = getPixelDataOffset(x+1,y+1,w);
+        oldPixel = [ndata[o], ndata[o+1], ndata[o+2]];
+        newPixel = addPixels(oldPixel,multiplyPixels(error,1/16));
+        ndata[o+0] = newPixel[0];
+        ndata[o+1] = newPixel[1];
+        ndata[o+2] = newPixel[2];
+    }
+    newData = new ImageData(ndata,canvas.width, canvas.height);
+    ctx.putImageData(newData, 0, 0);
+}
+
 
 </script>
