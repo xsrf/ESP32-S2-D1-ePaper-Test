@@ -271,8 +271,8 @@ void setupServer() {
     server.on("/show", HTTP_ANY, [](){
         if (!server.hasArg("file")) { server.send(500, "text/plain", "BAD ARGS"); return; }
         Serial.println("/show");
-        showImage(server.arg("file"));
 		server.send(200, "text/plain", "OK");
+        showImage(server.arg("file"));
 	});
 
 
