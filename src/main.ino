@@ -87,12 +87,19 @@ void showImage(String filename) {
     header.height = buf[25]<<24 | buf[24]<<16 | buf[23]<<8 | buf[22];
     header.layers = buf[27]<<8 | buf[26];
     header.bitsPerPixel = buf[29]<<8 | buf[28];
-    Serial.printf("Magic 0x%04x Offs %u %u [ %u x %u ] \n", header.magic, header.pixelOffset, header.bitsPerPixel, header.width, header.height);
+    Serial.printf("Magic 0x%04x Offs %u %u [ %u x %d ] \n", header.magic, header.pixelOffset, header.bitsPerPixel, header.width, header.height);
     Serial.printf("Layers %u Bits %u \n", header.layers, header.bitsPerPixel);
     if(header.magic != 0x424d) {
         Serial.println("Not a BitMap file");
         return;
     }
+
+    bool linesTopToBottom = false;
+    if(header.height < 0) {
+        linesTopToBottom = true;
+        header.height = abs(header.height);
+    }
+
     f.seek(header.pixelOffset);
 
     uint32_t imageBytes = f.size() - header.pixelOffset;
@@ -112,9 +119,19 @@ void showImage(String filename) {
     epd.SendData(0xC0);
     epd.SendCommand(0x10);
 
-    while (imageBytes-- > 0) {
-        f.read(c,1);
-        epd.SendData(c[0]);
+    if(linesTopToBottom) {
+        while (imageBytes-- > 0) {
+            f.read(c,1);
+            epd.SendData(c[0]);
+        }
+    } else {
+        for(int16_t y = header.height-1; y >=0; y--) {
+            f.seek(header.pixelOffset + y * (header.width/2));
+            for(int16_t x = 0; x < header.width/2; x++) {
+                f.read(c,1);
+                epd.SendData(c[0]);
+            }
+        }
     }
 
     epd.SendCommand(0x04);//0x04
