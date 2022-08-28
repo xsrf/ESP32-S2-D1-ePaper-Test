@@ -8,5 +8,29 @@
 </head>
 <body>
     <a href="/edit">File-System editor</a>
+    <hr />
+    <label for="filelist">Select file:</label>
+    <select id="filelist"></select>
+    <button id="show">Show on EPD</button>
 </body>
 </html>
+<script>
+
+async function updateFileList() {
+    let el = document.querySelector('#filelist');
+    list = await fetch('/list?dir=/');
+    data = await list.json();
+    bitmaps = data.map( e => e.name ).filter(e => e.endsWith('.bmp')).sort();
+    el.innerHTML = bitmaps.map(e => `<option value="${e}">${e}</option>`).join();
+}
+
+updateFileList();
+
+document.querySelector('#show').addEventListener('click', (e)=> {
+    let file = document.querySelector('#filelist').value;
+    if(file.endsWith('.bmp')) {
+        fetch('/show?file=/' + file);
+    }
+})
+
+</script>
