@@ -13,6 +13,7 @@
 //#include <LITTLEFS.h>
 #include <SPIFFS.h>
 #include <WebServer.h>
+#include <DNSServer.h>            //Local DNS Server used for redirecting all requests to the configuration portal
 
 
 WebServer server(80);
@@ -27,6 +28,7 @@ const String AP_SSID = String(String("ePaper-") + String(ESP.getChipId(), HEX));
 #endif
 const String AP_PASS = "epd-pass";
 
+DNSServer dnsServer;
 
 void setup() {
     Serial.begin(115200);
@@ -44,11 +46,15 @@ void setup() {
     setupServer();
     pinMode(LED_BUILTIN,OUTPUT);
     epd.Init();
+	// Setup DNS to resolve all Queries - Captive Portal
+	dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+    dnsServer.start(53, "*", WiFi.softAPIP());
 }
 
 void loop() {
     unsigned long ts = millis();
     server.handleClient();
+	dnsServer.processNextRequest();
     digitalWrite(LED_BUILTIN, (ts>>8) & 1);
 }
 
@@ -321,9 +327,16 @@ void setupServer() {
 
 
 	server.onNotFound([]() {
-		if(!handleFileRead(server.uri())) 
-            server.send(404, "text/plain", "FileNotFound");
-    });
+		if(!handleFileRead(server.uri())) {
+			if(server.hostHeader() != "192.168.4.1") {
+				// Captive portal
+				server.sendHeader("Location", String("http://192.168.4.1/"), true);
+				server.send(307, "text/html", "<a href=http://192.168.4.1/>http://192.168.4.1/</a>");
+			} else {
+				server.send(404, "text/plain", "FileNotFound");
+			}
+		}
+	});
 
 	server.begin();
 }
