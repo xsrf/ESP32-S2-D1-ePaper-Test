@@ -36,10 +36,6 @@ void setup() {
     WiFi.softAP(AP_SSID.c_str(),AP_PASS.c_str());
     WiFi.begin();
     // WiFi.begin("MySSID", "myPassword"); // Only required on first connect, credentials are saved permanently
-    if (WiFi.waitForConnectResult() != WL_CONNECTED) {
-        Serial.printf("WiFi Failed!\n");
-        return;
-    }
     Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
     SPIFFS.begin();
@@ -324,6 +320,21 @@ void setupServer() {
 		server.send(200, "text/plain", "OK");
         showImage(server.arg("file"));
 	});
+
+    server.on("/setWifi", HTTP_ANY, [](){
+        if(!server.hasArg("ssid")) {
+            server.send(500, "text/plain", "BAD ARGS"); 
+            return;
+        }
+        String ssid = server.arg("ssid");
+        String pass = server.arg("pass");
+        server.sendHeader("Location", String("/"), true);
+		server.send(307, "text/html", "Okay! <a href=/>Go Home</a>");
+        delay(200);
+        WiFi.begin(ssid.c_str(), pass.c_str());
+        delay(500);
+        ESP.restart();
+    });
 
 
 	server.onNotFound([]() {

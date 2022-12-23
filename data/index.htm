@@ -29,6 +29,11 @@
     <hr />
     <input type="file" id="filechooser" accept="image/png, image/jpeg, image/bmp, image/x-ms-bmp, image/gif, image/svg+xml, image/*" /><br /><button id="upload">Upload as upload.bmp</button>
     <canvas width="600" height="448" id="canvas"></canvas>
+    <form method="POST" action="/setWifi">
+        <input type="text" name="ssid" placeholder="SSID">
+        <input type="text" name="pass" placeholder="pass">
+        <input type="submit">
+    </form>
 </body>
 </html>
 <script>
